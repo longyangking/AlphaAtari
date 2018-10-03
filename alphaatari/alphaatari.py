@@ -46,6 +46,11 @@ if __name__=='__main__':
         if verbose:
             print("Start to re-train AI model for game: [{0}].".format(game_name))
 
+        from train import TrainAI
+
+        gym_game_name = __gym_game_names__[game_name]
+        trainai = TrainAI(game_name=gym_game_name, verbose=verbose)
+        trainai.start(__filename__)
 
         if verbose:
             print("The latest AI model is saved as [{0}]".format(__filename__))

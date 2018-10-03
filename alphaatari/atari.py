@@ -1,4 +1,8 @@
 import gym
+import numpy as np
+
+import skimage as skimage
+from skimage import transform, color, exposure
 
 class AtariGame:
     '''
@@ -17,7 +21,7 @@ class AtariGame:
         '''
         Get the shape of observation
         '''
-        return np.copy(self.env.observation_space)
+        return np.copy(self.env.observation_space.shape[:2])
 
     def get_action_dimension(self):
         '''
@@ -39,9 +43,18 @@ class AtariGame:
 
     def get_observation(self):
         '''
-        Get observation
+        Get observation in gray
         '''
-        return self.observation
+        x = skimage.color.rgb2gray(self.observation)
+        x = skimage.exposure.rescale_intensity(x, out_range=(0, 1))
+        return x
+
+    def get_random_action(self):
+        '''
+        Get random action
+        '''
+        action = self.env.action_space.sample()
+        return action
 
     def step(self, action):
         '''
