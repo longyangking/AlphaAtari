@@ -85,8 +85,6 @@ class SelfplayEngine:
 
         states = self.states[1:]
 
-        print(len(states), len(action_probs))
-
         return states, action_probs
 
 class TrainAI:
@@ -99,6 +97,11 @@ class TrainAI:
             self.ai = AI(game_name=self.game_name, time_span=time_span, verbose=self.verbose)
         else:
             self.ai = ai    
+
+        self.losses = list()
+
+    def get_losses(self):
+        return self.losses
 
     def get_selfplay_data(self, n_rounds, epsilon=0.5, gamma=0.9, timesteps=100):
         states = list()
@@ -135,7 +138,7 @@ class TrainAI:
         if self.verbose:
             print("Updating the neural network of AI model...")
 
-        history = self.ai.train(dataset, epochs=5, batch_size=32)
+        history = self.ai.train(dataset, epochs=1, batch_size=32)
         loss = history.history['loss']
 
         if self.verbose:

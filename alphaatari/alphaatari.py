@@ -21,9 +21,9 @@ if __name__=='__main__':
     parser.add_argument("--retrain", action='store_true', default=False, help="Re-Train AI")
     parser.add_argument("--train",  action='store_true', default=False, help="Train AI")
     parser.add_argument("--verbose", action='store_true', default=False, help="Verbose")
-    parser.add_argument("--playbyai", action='store_true', default=False, help="Play by AI")
+    parser.add_argument("--playai", action='store_true', default=False, help="Play by AI")
     parser.add_argument("--play", action='store_true', default=False, help="Play by human")
-    parser.add_argument("--name", default="AirRaid", help='Game name')
+    parser.add_argument("--name", default="SpaceInvaders", help='Game name')
 
     args = parser.parse_args()
     verbose = args.verbose
@@ -34,10 +34,28 @@ if __name__=='__main__':
         print("Error in game name: Not supported game yet. [{0}]".format(game_name))
         exit()
 
+    gym_game_name = __gym_game_names__[game_name]
+
     if args.train:
         if verbose:
             print("Continue to train AI model for game: [{0}].".format(game_name))
 
+        from ai import AI
+        from train import TrainAI
+
+        ai = AI(game_name=gym_game_name, verbose=verbose)
+        if verbose:
+            print("loading latest model: [{0}] ...".format(__filename__),end="")
+        ai.load_nnet(__filename__)
+        if verbose:
+            print("load OK!")
+
+        trainai = TrainAI(
+            game_name=gym_game_name,
+            ai=ai,
+            verbose=verbose
+        )
+        trainai.start(filename=__filename__)
 
         if verbose:
             print("The latest AI model is saved as [{0}]".format(__filename__))
@@ -48,16 +66,34 @@ if __name__=='__main__':
 
         from train import TrainAI
 
-        gym_game_name = __gym_game_names__[game_name]
         trainai = TrainAI(game_name=gym_game_name, verbose=verbose)
         trainai.start(__filename__)
 
         if verbose:
             print("The latest AI model is saved as [{0}]".format(__filename__))
 
-    if args.playbyai:
+    if args.playai:
         if verbose:
             print("Start to play the game by the AI model, which will be rendered in the screen.")
 
+        from ai import AI
+        from atari import GameEngine
+
+        ai = AI(game_name=gym_game_name, verbose=verbose)
+        if verbose:
+            print("loading latest model: [{0}] ...".format(__filename__),end="")
+        ai.load_nnet(__filename__)
+        if verbose:
+            print("load OK!")
+
+        print("Please close game in terminal after closing window (i.e, Press Ctrl+C).")
+        engine = GameEngine(game_name=gym_game_name, verbose=verbose)
+        engine.start_ai(ai=ai)
+
     if args.play:
-        print("Play BulletScreen game. Please close game in terminal after closing window (i.e, Press Ctrl+C).")
+        print("Play Atari game. Please close game in terminal after closing window (i.e, Press Ctrl+C).")
+
+        from atari import GameEngine
+
+        engine = GameEngine(game_name=gym_game_name, verbose=verbose)
+        engine.start()
