@@ -1,7 +1,7 @@
 from __future__ import print_function
 
 from keras.models import Model
-from keras.layers import Input, Dense, Conv2D, Flatten, BatchNormalization, Activation, LeakyReLU, Add
+from keras.layers import Input, Dense, Conv2D, Flatten, BatchNormalization, Activation, LeakyReLU, Add, Concatenate
 from keras.optimizers import SGD, Adam
 from keras import regularizers
 import keras.backend as K
@@ -13,11 +13,12 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2' # Only error will be shown
 
 class NeuralNetwork:
     def __init__(self, input_shape, output_dim, network_structure,
-        learning_rate=1e-3, l2_const=1e-4, verbose=False
+        feature_dim=32, learning_rate=1e-3, l2_const=1e-4, verbose=False
     ):
         self.input_shape = input_shape
         self.output_dim = output_dim
         self.network_structure = network_structure
+        self.feature_dim = feature_dim
 
         self.learning_rate = learning_rate
         self.l2_const = l2_const
@@ -26,15 +27,15 @@ class NeuralNetwork:
         self.model = self.build_model()
 
     def build_model(self):
-        input_tensor = Input(shape=self.input_shape)
+        state_tensor = Input(shape=self.input_shape)
 
-        x = self.__conv_block(input_tensor, self.network_structure[0]['filters'], self.network_structure[0]['kernel_size'])
+        x = self.__conv_block(state_tensor, self.network_structure[0]['filters'], self.network_structure[0]['kernel_size'])
         if len(self.network_structure) > 1:
             for h in self.network_structure[1:]:
                 x = self.__res_block(x, h['filters'], h['kernel_size'])
 
         action_prob_tensor = self.__action_prob_block(x)
-        model = Model(inputs=input_tensor, outputs=action_prob_tensor)
+        model = Model(inputs=state_tensor, outputs=action_prob_tensor)
         model.compile(
             loss='mse',
             optimizer=Adam(self.learning_rate)
@@ -67,25 +68,20 @@ class NeuralNetwork:
         out = LeakyReLU()(out)
         return out
 
-    def __action_prob_block(self, x):
-        out = Conv2D(
-            filters = 64,
-            kernel_size = (3,3),
-            padding = 'same',
-            activation='linear',
-            kernel_regularizer = regularizers.l2(self.l2_const)
-        )(x)
-        out = BatchNormalization(axis=1)(out)
-        out = LeakyReLU()(out)
-
-        out = Flatten()(out)
+    def __dense_block(self, x, units):
         out = Dense(
-            36,
+            units,
             use_bias=False,
             activation='linear',
             kernel_regularizer= regularizers.l2(self.l2_const)
-		)(out)
+		)(x)
         out = LeakyReLU()(out)
+        return out
+
+    def __action_prob_block(self, x):
+        out = self.__conv_block(x, 64, kernel_size=3)
+        out = Flatten()(out)
+        out = self.__dense_block(x, units=32)
 
         action_prob = Dense(
 			self.output_dim, 
@@ -94,6 +90,45 @@ class NeuralNetwork:
             kernel_regularizer=regularizers.l2(self.l2_const),
 			)(out)
 
+        return action_prob
+
+    def __icm_forward_block(self, action_prob_tensor, phi_t_tensor):
+        x = self.__dense_block(action_prob_tensor, units=32)
+        y = self.__dense_block(phi_t_tensor, units=64)
+        out = Concatenate()([x, y])
+
+        out = self.__dense_block(out, units=64)
+        out = self.__dense_block(out, units=64)
+        out = self.__dense_block(out, units=64)
+        out = self.__dense_block(out, units=64)
+        return out
+
+    def __icm_features_block(self, state_shape):
+        out = self.__conv_block(self, state_tensor, filters=64, kernel_size=3)
+        out = self.__conv_block(self, out, filters=32, kernel_size=3)
+        out = self.__conv_block(self, out, filters=32, kernel_size=3)
+        out = Flatten()(out)
+        out = self.__dense_block(out, units=32)
+        out = Dense(
+            units=self.feature_dim,
+            use_bias=False,
+            activation='relu',
+            kernel_regularizer=regularizers.l2(self.l2_const)
+        )(out)
+        return out
+
+    def __icm_inverse_block(self, phi1, phi2):
+        phi1 = self.__dense_block(phi1, units=32)
+        phi2 = self.__dense_block(phi2, units=32)
+        phi = Concatenate()([phi1, phi2])
+        out = self.__dense_block(phi, units=64)
+        out = self.__dense_block(out, units=32)
+        action_prob = Dense(
+            self.output_dim,
+            use_bias=False,
+            activation='sigmoid',
+            kernel_regularizer=regularizers.l2(self.l2_const)
+        )(out)
         return action_prob
 
     def fit(self, states, action_probs, epochs, batch_size):
@@ -130,11 +165,34 @@ class AI:
         self.state_shape = *observation_shape, time_span
         self.action_dim = AtariGame(game_name=self.game_name).get_action_dimension()
 
-        network_structure = list()
-        network_structure.append({'filters':64, 'kernel_size':3})
-        network_structure.append({'filters':64, 'kernel_size':3})
-        network_structure.append({'filters':64, 'kernel_size':3})
-        network_structure.append({'filters':64, 'kernel_size':3})
+        # The network structure is based on intrinsic curiosity module (ICM)
+
+        network_structure = dict()
+        network_structure['policy'] = list()
+        network_structure['policy'].append({'filters':64, 'kernel_size':3})
+        network_structure['policy'].append({'filters':64, 'kernel_size':3})
+        network_structure['policy'].append({'filters':64, 'kernel_size':3})
+        network_structure['policy'].append({'filters':64, 'kernel_size':3})
+
+        network_structure['icm'] = dict()
+        network_structure['icm']['forward_model'] = list()
+        network_structure['icm']['features'] = list()
+        network_structure['icm']['inverse_model'] = list()
+
+        network_structure['icm']['forward_model'].append({'filters':64, 'kernel_size':3})
+        network_structure['icm']['forward_model'].append({'filters':64, 'kernel_size':3})
+        network_structure['icm']['forward_model'].append({'filters':64, 'kernel_size':3})
+        network_structure['icm']['forward_model'].append({'filters':64, 'kernel_size':3})
+
+        network_structure['icm']['features'].append({'filters':64, 'kernel_size':3})
+        network_structure['icm']['features'].append({'filters':64, 'kernel_size':3})
+        network_structure['icm']['features'].append({'filters':64, 'kernel_size':3})
+        network_structure['icm']['features'].append({'filters':64, 'kernel_size':3})
+
+        network_structure['icm']['inverse_model'].append({'filters':64, 'kernel_size':3})
+        network_structure['icm']['inverse_model'].append({'filters':64, 'kernel_size':3})
+        network_structure['icm']['inverse_model'].append({'filters':64, 'kernel_size':3})
+        network_structure['icm']['inverse_model'].append({'filters':64, 'kernel_size':3})
 
         self.nnet = NeuralNetwork(
             input_shape=self.state_shape,

@@ -7,9 +7,7 @@ __info__ = "Play Atari Game with AI"
 
 __gym_game_names__ = {
     "AirRaid":"AirRaid-v0",
-    #"Alien-ram":"Alien-ram-v0",
     "Alien":"Alien-v0",
-    #"Amidar-ram":"Amidar-ram-v0",
     "Amidar":"Amidar-v0",
     "SpaceInvaders":"SpaceInvaders-v0"
 }
